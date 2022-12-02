@@ -1,0 +1,12 @@
+name: CellSizeR
+title: CellSizeR
+username:
+account: amsterdamstudygroup
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 5873552
+bundleId: 5726551
+url: https://amsterdamstudygroup.shinyapps.io/CellSizeR/
+when: 1648215250.04042
+asMultiple: FALSE
+asStatic: FALSE
