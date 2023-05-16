@@ -1,0 +1,314 @@
+---
+title: Cell Size dashboard
+output: 
+  flexdashboard::flex_dashboard:
+    theme: cerulean
+    orientation: rows
+    vertical_layout: fill
+    social: ["menu"]
+    source_code: "https://github.com/JoachimGoedhart/CellSizeR"
+    navbar:
+      - { title: "", href: "https://www.addgene.org", align: right }
+runtime: shiny
+---
+
+
+```{r setup, include=FALSE}
+### Load the required packages
+library(flexdashboard)
+library(tidyverse)
+library(plotly)
+```
+
+
+```{r include=FALSE}
+### Read the data
+
+df_sheet <- read.csv("https://docs.google.com/spreadsheets/d/e/2PACX-1vSc-nI1-s_u-XkNXEn_u2l6wkBafxJMHQ_Cd3kStrnToh7kawqjQU3y2l_1riLigKRkIqlNOqPrgkdW/pub?output=csv", na.strings = "")
+df_sheet <- df_sheet %>% na.omit()
+
+colnames(df_sheet) <- c("Timestamp", "Group", "Cell", "Nucleus")
+df_tidy <-
+    pivot_longer(
+        df_sheet,
+        cols = -c("Timestamp", "Group"),
+        names_to = "Sample",
+        values_to = "Size"
+    ) %>% mutate(Size = gsub(" ", "", Size)) %>% separate_rows(Size, sep=",")
+
+df_clean <- df_tidy %>% mutate(Size = as.numeric(Size)) %>% filter(Size>0 & Size<1000)
+
+df <- df_clean %>% separate('Timestamp', c("Date", "Time"), sep=" ") %>%
+    separate('Date', c("day", "month", "year"), sep="/", convert = TRUE)
+
+```
+
+
+
+<!---------------- START OF THE LAYOUT OF THE DASHBOARD -------------->
+
+# Column {.sidebar}
+-----------------------------------------------------------------------
+
+### About
+
+_This dashboard summarizes and displays the data that is measured by students in the course "Cellulaire Oncologie". Cell size measurements were done with microscopy on human cheek cells._
+
+-----------
+
+### Modify Layout
+
+```{r}
+
+selectInput("year", label = "Show data from:", choices = c("all years", unique(df$year)))
+
+numericInput('bins', 'Number of bins', min=10,
+            value=200, step=5)
+
+sliderInput('alpha', 'Transparancy', min=0, max = 1.0,
+            value=1, step=.1)
+
+checkboxInput(inputId = "scale_log_10",
+                          label = "Log scale",
+                          value = FALSE)
+
+# checkboxInput("multiples", "Separate plots", value = FALSE)
+
+
+```
+
+<!---------------- FIRST ROW OF THE DASHBOARD WITH VALUEBOXES -------------->
+
+Row
+-----------------------------------------------------------------------
+
+### entries in total {.value-box}
+
+```{r}
+renderValueBox({
+  totalRows <- nrow(df_tidy)
+  valueBox(
+    value = totalRows,
+    icon = "fa-hashtag",
+    color = "primary",
+    href = ""
+  )
+})
+```
+
+### valid entries {.value-box}
+
+```{r}
+renderValueBox({
+  totalRows_valid <- nrow(df)
+  valueBox(
+    value = totalRows_valid,
+    icon = "fa-check",
+    color = "primary",
+    href = ""
+  )
+})
+```
+
+### groups {.value-box}
+
+```{r}
+renderValueBox({
+  numberOfReagents <- length(unique(df$Group))
+  valueBox(
+    value = numberOfReagents,
+    icon = "fa-sitemap",
+    color = "primary"
+  )
+})
+```
+
+### years of data {.value-box}
+
+```{r}
+renderValueBox({
+  activeYears <- max(df$year) - min(df$year) + 1
+  valueBox(
+    value = activeYears,
+    icon = "fa-calendar",
+    color = "primary"
+  )
+})
+```
+
+
+
+<!---------------- SECOND ROW OF THE DASHBOARD WITH INTERACTIVE PLOTS -------------->
+
+Row {data-height=700}
+-----------------------------------------------------------------------
+
+### Measurement results {data-width=770}
+
+```{r}
+df_year <- reactive({
+  if (input$year != "all years") {
+    df %>% filter(year == input$year)}
+  else {return(df)}
+})
+
+renderPlotly({
+
+         p <- ggplot(df_year(), aes(x=Size, fill=Sample))
+
+        p <- p + geom_histogram(bins = input$bins, alpha=input$alpha, color='grey20', aes(text = paste("size:",round(Size), "µm")))
+        
+        if (input$scale_log_10)
+            p <- p + scale_x_log10()
+        
+        p <- p + labs(y="Count", x="Size [µm]")
+        
+        p <- p + coord_cartesian(xlim = c(0.5,120))
+        
+        p <- p + theme_light(base_size = 16) + theme(axis.text.y = element_blank())
+        p <- p + facet_wrap(~Sample)
+        p <- p + theme(legend.position = "none")
+
+
+        # ggplotly(p, tooltip = "text") %>% config(displayModeBar = F)  
+   ggplotly(p, tooltip = list("text","Sample")) %>% config(displayModeBar = F)
+})
+
+```
+
+### Number of entries per year {data-width=380}
+
+```{r}
+# df_yearcount <- 
+#   df %>%
+#   group_by(year) %>%
+#   mutate(n=n())
+
+
+renderPlotly({
+g <- ggplot(df, aes(x = 1, y = year)) +
+  geom_count(alpha=0.5) + coord_flip() + scale_size_area(max_size = 8) +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "bottom") +
+  # scale_y_continuous(expand = c(0,0)) +
+  labs(x="", y="") +
+  theme(panel.border = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text.x = element_blank()
+  ) +
+  coord_cartesian(clip = 'off') + scale_y_continuous(breaks=c(2021:2030), limits = c(2021,2025))
+
+  ggplotly(g, tooltip = c("n")) %>% config(displayModeBar = F)
+})
+```
+
+<!---------------- THIRD ROW OF THE DASHBOARD WITH INTERACTIVE PLOT AND WRITTEN SUMMARY -------------->
+
+Row {data-height=400}
+-----------------------------------------------------------------------
+
+### Cell size data per group {data-width=300}
+
+
+```{r}
+
+df_year_group <- reactive({
+  df_cell <- df %>% filter(Sample =="Cell")
+  if (input$year != "all years") {
+    df_cell %>% filter(year == input$year)}
+  else {return(df_cell)}
+})
+
+renderPlot({
+
+         p <- ggplot(df_year_group(), aes(x=Group, y=Size, fill=Group))
+
+        p <- p + geom_violin() +  stat_summary(fun = median, geom = "point")
+        
+        if (input$scale_log_10)
+            p <- p + scale_y_log10()
+        
+        p <- p + labs(x="Group", y="Size [µm]")
+        p <- p + coord_cartesian(ylim = c(0.5,200))
+        
+        p <- p + theme_light(base_size = 16)
+        p <- p + theme(legend.position = "none")
+
+p
+        # ggplotly(p, tooltip = "text") %>% config(displayModeBar = F)  
+   # ggplotly(p, tooltip = list("Size")) %>% config(displayModeBar = F)
+})
+
+
+```
+
+
+### Summary
+
+```{r}
+renderUI({
+
+withProgress(message = 'Fetching the data', detail = 'This may take a while...', value = 0, {
+               
+   ######## Calculate some numbers and stats
+ 
+    df_cell <- df %>% filter(Sample == "Cell")
+  
+    activeYears <- max(df$year) - min(df$year) + 1
+    
+    totalRows_valid <- nrow(df)
+    
+    
+    number_of_groups <- df %>% group_by(year, Time) %>% summarize(n=n()) %>% nrow()
+    
+    min_cell_size <- min(df_cell$Size)
+    max_cell_size <- max(df_cell$Size)    
+    
+  ######## Calculate some numbers and stats
+  # mostPopular <- dfPlasmidCount() %>% ungroup() %>% slice(1)
+  # totalRequests <- nrow(dfUploaded())
+  # numberOfCountries <- length(unique(dfUploaded()$Requesting.Country))
+  # 
+  # firstRequest <- min(dfYearsCount()$Year)
+  # bestYear <- dfYearsCount() %>% top_n(1, n)
+  # lastYear <- max(dfYearsCount()$Year)-1
+  # df_lastyear <- dfUploaded() %>% filter(Year==lastYear) %>%
+  #   group_by(Material, ID) %>%
+  #   tally(sort = TRUE) %>% ungroup()
+  # bestLastYear  <- df_lastyear %>% top_n(1, n)
+  # popularLastYear <- df_lastyear %>% top_n(3, n) %>% pull(Material) %>% as.character()
+  # 
+  # dfOnFire <- dfPlasmidCount() %>% group_by(flame) %>% summarize(n=n())
+  # 
+  # numberOfBlueFlames <- dfOnFire %>% filter(flame == "#50B0E8") %>% pull(n)
+  # numberOfYellowFlames <- dfOnFire %>% filter(flame == "#E19E37") %>% pull(n)
+  # numberOfRedFlames <- dfOnFire %>% filter(flame == "#D96C6D") %>% pull(n)
+
+  ######## Report on the numbers and stats
+  
+  text <- paste("A total number of",totalRows_valid, "valid data entries have been uploaded over the course of ",
+               activeYears ," years, by ", number_of_groups, " student pairs.")
+  text <- paste0(text,"The recorded sizes for a human cheek cell vary between:", round(min_cell_size,1) , " µm and ", round(max_cell_size,0)," µm.")
+
+  
+  text <- paste0(text, "</br></br>What is the average size that you measured for your own cheek cells and how does this relate to the existing data? ")
+  #                firstRequest,". Most reagents, ",bestYear$n,", were sent in ",
+  #                bestYear$Year,". In ",lastYear,", ",nrow(df_lastyear),
+  #                " unique reagents were shared. That year the most popular reagent was ",
+  #                bestLastYear$Material," with ",bestLastYear$n,
+  #                " requests. Other popular reagents were ", popularLastYear[2]," & ",popularLastYear[3],".</br>")
+  
+
+
+  
+incProgress(1)
+})
+
+return(HTML(text))
+
+  
+})
+```
+
