@@ -8,7 +8,7 @@ output:
     social: ["menu"]
     source_code: "https://github.com/JoachimGoedhart/CellSizeR"
     navbar:
-      - { title: "", href: "https://www.addgene.org", align: right }
+      - { title: "UvA Grassroots", href: "https://icto.uva.nl/grassroots/grassroots.html", align: right }
 runtime: shiny
 ---
 
@@ -52,7 +52,7 @@ df <- df_clean %>% separate('Timestamp', c("Date", "Time"), sep=" ") %>%
 
 ### About
 
-_This dashboard summarizes and displays the data that is measured by students in the course "Cellulaire Oncologie". Cell size measurements were done with microscopy on human cheek cells._
+_This dashboard summarizes and displays the data that is measured by students in the course "Cellulaire Oncologie". Cell size measurements were done with microscopy on human cheek cells. The development of this dashboard is supported by a UvA Grassroots grant._
 
 -----------
 
@@ -253,6 +253,8 @@ renderUI({
 withProgress(message = 'Fetching the data', detail = 'This may take a while...', value = 0, {
                
    ######## Calculate some numbers and stats
+  
+  recent <- tail(df,1) %>% unlist()
  
     df_cell <- df %>% filter(Sample == "Cell")
   
@@ -289,7 +291,9 @@ withProgress(message = 'Fetching the data', detail = 'This may take a while...',
   ######## Report on the numbers and stats
   
   text <- paste("A total number of",totalRows_valid, "valid data entries have been uploaded over the course of ",
-               activeYears ," years, by ", number_of_groups, " student pairs.")
+               activeYears ," years, by ", number_of_groups, " student pairs. ")
+    text <- paste0(text,"The most recent upload was on: ", recent[1], "-",recent[2],"-", recent[3],"</br>")
+
   text <- paste0(text,"The recorded sizes for a human cheek cell vary between:", round(min_cell_size,1) , " µm and ", round(max_cell_size,0)," µm.")
 
   
